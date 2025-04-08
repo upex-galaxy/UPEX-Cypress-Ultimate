@@ -1,8 +1,8 @@
 // cypress.config.cron.ts
 import { defineConfig } from 'cypress';
-import { cypressOptions } from './cypress/support/config/cypressOptions';
-import { envConfig } from './cypress/support/config/envConfig';
-import { setupNodeEvents } from './cypress/support/config/setupNodeEvents';
+import { cypressOptions } from 'cypress/support/config/cypressOptions';
+import { envConfig } from 'cypress/support/config/envConfig';
+import { setupNodeEvents } from 'cypress/support/config/setupNodeEvents';
 
 const secrets = ['ALWAYSDATA_USER', 'ALWAYSDATA_PASS'];
 
