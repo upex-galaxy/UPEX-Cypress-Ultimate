@@ -48,4 +48,4 @@ jobs:
 
     - name: Run Alwaysdata Cron Job
       run: |
-        bun cypress run --browser electron --config-file=cypress.config.cron.ts --spec=cypress/Tests/utils/AlwaysData-cron.cy.ts
+        bun run cypress run --browser electron --config-file=cypress.config.cron.ts --spec=cypress/Tests/utils/AlwaysData-cron.cy.ts
