@@ -6,6 +6,10 @@ on:
   workflow_dispatch:
     # Permite ejecución manual
 
+env:
+  ALWAYSDATA_USER: ${{ secrets.ALWAYSDATA_USER }}
+  ALWAYSDATA_PASS: ${{ secrets.ALWAYSDATA_PASS }}
+
 jobs:
   keep-alive:
     runs-on: ubuntu-latest
@@ -21,16 +25,10 @@ jobs:
 
     - name: Check Necesary Secrets
       run: |
-        if [ -z "${{ secrets.ALWAYSDATA_USER }}" ]; then
-          echo "Error: ALWAYSDATA_USER not defined"
+        if [ -z "$ALWAYSDATA_USER" ] || [ -z "$ALWAYSDATA_PASS" ]; then
+          echo "Error: ALWAYSDATA_USER or ALWAYSDATA_PASS is not defined"
           exit 1
         fi
-        if [ -z "${{ secrets.ALWAYSDATA_PASS }}" ]; then
-          echo "Error: ALWAYSDATA_PASS not defined"
-          exit 1
-        fi
-        echo "CI=${CI}"
-        echo "ALWAYSDATA_USER=${{ secrets.ALWAYSDATA_USER }}"
 
     - name: Cache Bun modules
       uses: actions/cache@v3
@@ -48,22 +46,6 @@ jobs:
     - name: Install dependencies
       run: bun install
 
-    - name: Verificar estructura de archivos
-      run: |
-        if [ ! -d "cypress/support/config" ]; then
-          echo "Directory cypress/support/config does not exist."
-          exit 1
-        fi
-        if [ -z "$(ls -A cypress/support/config)" ]; then
-          echo "Directory cypress/support/config is empty."
-          exit 1
-        fi
-        echo "Directory cypress/support/config exists and is not empty."
-        find cypress/support/config
-
     - name: Run Alwaysdata Cron Job
-      env:
-        ALWAYSDATA_USER: ${{ secrets.ALWAYSDATA_USER }}
-        ALWAYSDATA_PASS: ${{ secrets.ALWAYSDATA_PASS }}
       run: |
         bun cypress run --config-file cypress.config.cron.ts --browser electron --spec 'cypress/Tests/utils/AlwaysData-cron.cy.ts'

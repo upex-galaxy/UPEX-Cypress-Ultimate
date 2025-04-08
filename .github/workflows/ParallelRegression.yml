@@ -32,6 +32,24 @@ on:
         type: string
         default: '{"suts": ["Orange", "DemoQA", "Trello"]}'
 
+env:
+  ORANGE_USERNAME: ${{ secrets.ORANGE_USERNAME }}
+  ORANGE_PASSWORD: ${{ secrets.ORANGE_PASSWORD }}
+  TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
+  TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+  LITE_CART_DB_USER: ${{ secrets.LITE_CART_DB_USER }}
+  LITE_CART_DB_PASS: ${{ secrets.LITE_CART_DB_PASS }}
+  LITE_CART_CLIENT_USERNAME: ${{ secrets.LITE_CART_CLIENT_USERNAME }}
+  LITE_CART_CLIENT_PASS: ${{ secrets.LITE_CART_CLIENT_PASS }}
+
+  DEBUG_PIPE: ${{ vars.DEBUG_PIPE }}
+
+  LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
+  BASE_PATH: "${{ vars.TESTS_BASE_PATH }}"
+  TESTS_PATH: ${{ vars.TESTS_PATH }}
+  TESTS_RESULTS: ${{ vars.TESTS_RESULTS }}
+  MOCHA_REPORT_DIR: ${{ vars.MOCHA_REPORT_DIR }}
+
 jobs:
 
   #####################
@@ -39,13 +57,7 @@ jobs:
     runs-on: ${{ inputs.system }}
     environment:
       name: ${{ inputs.environment }}
-    env:
-      ORANGE_USERNAME: ${{ secrets.ORANGE_USERNAME }}
-      ORANGE_PASSWORD: ${{ secrets.ORANGE_PASSWORD }}
-      TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
-      TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
-      DEBUG_PIPE: ${{ vars.DEBUG_PIPE }}
-      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
+
     outputs:
       LOG_FILE: ${{ steps.set-debug-log.outputs.LOG_FILE }}
 
@@ -282,10 +294,6 @@ jobs:
         SUT: ${{ fromJson(inputs.SUTS).suts }}
     environment:
       name: ${{ inputs.environment }}
-    env:
-      BASE_PATH: "${{ vars.TESTS_BASE_PATH }}"
-      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
-      DEBUG: "${{ vars.DEBUG_PIPE }}"
 
     steps:
     #####################
@@ -446,21 +454,7 @@ jobs:
     environment:
       name: ${{ inputs.environment }}
     env:
-      BASE_PATH: "${{ vars.TESTS_BASE_PATH }}"
-      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
-      TESTS_PATH: ${{ vars.TESTS_PATH }}
-      TESTS_RESULTS: ${{ vars.TESTS_RESULTS }}
-      DEBUG_PIPE: ${{ vars.DEBUG_PIPE }}
       LOG_FILE: ${{ needs.Prepare_Common_Files.outputs.LOG_FILE }}
-      MOCHA_REPORT_DIR: ${{ vars.MOCHA_REPORT_DIR }}
-      ORANGE_USERNAME: ${{ secrets.ORANGE_USERNAME }}
-      ORANGE_PASSWORD: ${{ secrets.ORANGE_PASSWORD }}
-      TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
-      TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
-      LITE_CART_DB_USER: ${{ secrets.LITE_CART_DB_USER }}
-      LITE_CART_DB_PASS: ${{ secrets.LITE_CART_DB_PASS }}
-      LITE_CART_CLIENT_USERNAME: ${{ secrets.LITE_CART_CLIENT_USERNAME }}
-      LITE_CART_CLIENT_PASS: ${{ secrets.LITE_CART_CLIENT_PASS }}
     outputs:
       result: ${{ steps.test_result.outputs.result }}
 
@@ -644,11 +638,7 @@ jobs:
     environment:
       name: ${{ inputs.environment }}
     env:
-      DEBUG_PIPE: ${{ vars.DEBUG_PIPE }}
       LOG_FILE: ${{ needs.Prepare_Common_Files.outputs.LOG_FILE }}
-      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
-      TESTS_RESULTS: ${{ vars.TESTS_RESULTS }}
-      MOCHA_REPORT_DIR: ${{ vars.MOCHA_REPORT_DIR }}
     steps:
 
     #####################
@@ -750,10 +740,6 @@ jobs:
         SUT: ${{ fromJson(inputs.SUTS).suts }}
     environment:
       name: ${{ inputs.environment }}
-    env:
-      DEBUG_PIPE: ${{ vars.DEBUG_PIPE }}
-      LOG_FILE: ${{ needs.Prepare_Common_Files.outputs.LOG_FILE }}
-      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
     steps:
 
     ##################

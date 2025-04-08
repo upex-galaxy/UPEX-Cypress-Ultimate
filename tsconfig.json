@@ -18,8 +18,7 @@
 			"@pages/*": ["./cypress/Tests/pages/*"],
 			"@api/*": ["./cypress/Tests/api/*"],
 			"@utils/*": ["./cypress/Tests/utils/*"],
-			"@data/*": ["./cypress/fixtures/data/*"],
-			"@config/*": ["./cypress/support/config/*"]
+			"@data/*": ["./cypress/fixtures/data/*"]
 		},
 		"skipLibCheck": true
 	},

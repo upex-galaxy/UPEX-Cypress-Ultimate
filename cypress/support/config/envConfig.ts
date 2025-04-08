@@ -1,4 +1,9 @@
 // cypress/support/config/secrets.ts
+import dotenv from 'dotenv';
+
+// Cargar variables de entorno
+dotenv.config();
+
 export function getEnvVariable(name: string, required = true): string | undefined {
 	const value = process.env[name];
 	if (!value && required) {
