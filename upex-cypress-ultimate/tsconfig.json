@@ -1,0 +1,28 @@
+{
+	"compilerOptions": {
+		"outDir": "./dist",
+		"allowJs": true,
+		"allowSyntheticDefaultImports": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"module": "ESNext",
+		"moduleResolution": "node",
+		"resolveJsonModule": true,
+		"strict": true,
+		"target": "ESNext",
+		"verbatimModuleSyntax": true,
+		"lib": ["es5", "dom", "esnext"],
+		"types": ["cypress-file-upload", "cypress-plugin-api", "cypress-plugin-steps", "cypress", "node", "@4tw/cypress-drag-drop"],
+		"baseUrl": ".",
+		"paths": {
+			"@pages/*": ["./cypress/Tests/pages/*"],
+			"@api/*": ["./cypress/Tests/api/*"],
+			"@utils/*": ["./cypress/Tests/utils/*"],
+			"@data/*": ["./cypress/fixtures/data/*"],
+			"@config/*": ["./cypress/support/config/*"]
+		},
+		"skipLibCheck": true
+	},
+	"include": ["./cypress.config.ts", "cypress/support/config/orange.d.ts", "**/*.ts", "**/*.Page.ts", "**/*.Page.Types.ts", "**/*.Api.ts", "**/*.Api.Types.ts"],
+	"exclude": ["./node_modules", "**/*.js", "./docs"]
+}

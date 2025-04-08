@@ -1,0 +1,768 @@
+name: 🔀 UPEX CI/CD Parallel 🔁 Regression Pipeline
+run-name: 🧪 ${{github.actor}} 👨‍🔧 triggered Parallel 🔁 Regression in ${{github.ref_name}}
+
+on:
+  workflow_dispatch:
+    inputs:
+      system:
+        description: 💻 Select the OS
+        required: true
+        default: 'ubuntu-latest'
+        type: choice
+        options:
+        - ubuntu-latest
+        - ubuntu-22.04
+        - macos-latest
+        - windows-latest
+      environment:
+        description: 🌍 Select the Test Environment
+        required: true
+        default: 'QA'
+        type: choice
+        options:
+        - DEV
+        - SANDBOX
+        - QA
+        - STAGING
+        - UAT
+        - PROD
+      SUTS:
+        description: 📦 Provide a JSON with the SUTs for testing
+        required: true
+        type: string
+        default: '{"suts": ["Orange", "DemoQA", "Trello"]}'
+
+jobs:
+
+  #####################
+  Prepare_Common_Files:
+    runs-on: ${{ inputs.system }}
+    environment:
+      name: ${{ inputs.environment }}
+    env:
+      ORANGE_USERNAME: ${{ secrets.ORANGE_USERNAME }}
+      ORANGE_PASSWORD: ${{ secrets.ORANGE_PASSWORD }}
+      TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
+      TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+      DEBUG_PIPE: ${{ vars.DEBUG_PIPE }}
+      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
+    outputs:
+      LOG_FILE: ${{ steps.set-debug-log.outputs.LOG_FILE }}
+
+    steps:
+    #####################
+    - name: 📦 Checkout Repository
+      uses: actions/checkout@v3
+
+    #####################
+    - name: 🗄️ Restore Cache bun dependencies
+      id: cache-bun
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.bun
+          node_modules
+          ~/.cache/Cypress
+        key: ${{ inputs.system }}-bun-${{ hashFiles('*.{json,ts,lockb,lock}') }}
+        restore-keys: |
+          ${{ inputs.system }}-bun-
+
+    #####################
+    - name: 💿 Install Node.js v20
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    #####################
+    - name: 🍙 Bun Setup
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    #####################
+    - name: 🧬 Install Project Dependencies
+      run: |
+        bun install
+
+    ####################
+    - name: 📝 Set DEBUG Log info
+      id: set-debug-log
+      run: |
+        (
+          echo "DEBUG_PIPE: ${{ env.DEBUG_PIPE }}"
+
+          echo "LOG_FILE_PATH: ${{ env.LOG_FILE_PATH }}"
+
+          if [[ -z "${{ env.LOG_FILE_PATH }}" ]]; then
+            LOG_FILE_PATH="cypress/tests_results/logs/parallelRegression.log"
+          else
+            LOG_FILE_PATH="${{ env.LOG_FILE_PATH }}/parallelRegression.log"
+          fi
+
+          mkdir -p "$(dirname "$LOG_FILE_PATH")"
+          rm -f "$LOG_FILE_PATH"
+
+          if [[ -n "$LOG_FILE_PATH" ]]; then
+            echo "LOG_FILE: $LOG_FILE_PATH"
+            echo "LOG_FILE=$LOG_FILE_PATH" >> $GITHUB_ENV
+            echo "LOG_FILE=$LOG_FILE_PATH" >> $GITHUB_OUTPUT
+          else
+            echo "LOG_FILE no se ha definido correctamente."
+            exit 1
+          fi
+        )
+
+    ####################
+    - name: ⚡ Run AdBlock extension Test
+      run: |
+        DEBUG="${{ env.DEBUG_PIPE }}"
+        LOG_FILE="${{ env.LOG_FILE }}"
+
+        echo "-----------"$'\n'"Run AdBlock extension Test"$'\n'"-----------" >> $LOG_FILE
+
+        test_output=$(bun run test:smoke:ci 2>&1 | head -n 5)
+        echo "$test_output" >> $LOG_FILE
+
+    #####################
+    - name: 🛠️ Calculate General Artifact Hash
+      id: general-hash
+      run: |
+        (
+          files_to_hash=$(find cypress/support cypress/fixtures/data cypress/fixtures/images cypress/Tests/utils cypress/Tests/pages -type f)
+
+          root_files=$(find . -maxdepth 1 -type f \( -name "*.json" -o -name ".eslintrc.json" -o -name "bun.lockb" -o -name "yarn.lock" -o -name "*.ts" \))
+
+          hash_output=$(cat <(echo "$root_files") <(echo "$files_to_hash") | xargs sha256sum | sort | sha256sum)
+
+          GENERAL_HASH=$(echo "$hash_output" | awk '{print $1}')
+          echo "GENERAL_HASH=$GENERAL_HASH" >> $GITHUB_ENV
+
+          if [ "$DEBUG_PIPE" = "true" ]; then
+            echo "-----------"$'\n'"Calculate General Artifact Hash"$'\n'"-----------" >> $LOG_FILE
+            echo "Files being processed: $files_to_hash" >> $LOG_FILE
+            echo "Hash Output: $hash_output" >> $LOG_FILE
+          fi
+        )
+
+    #####################
+    - name: 🔍 Check for General Artifact
+      id: check-general-artifact
+      run: |
+        artifact_name="cy-general-artifact"
+        artifact_file="general-hash.txt"
+        temp_dir="temp_general"
+        log_output=""
+
+        download_output=$(gh run download -n $artifact_name -D $temp_dir 2>&1)
+        echo "Download output: $download_output"
+        log_output="$log_output $download_output"$'\n'
+
+        if [ $? -eq 0 ]; then
+          artifact_path=$(find "$temp_dir" -type f -name "$artifact_file" | head -n 1)
+          
+          log_output="$log_output Artifact Path: $artifact_path"$'\n'
+          
+          if [ -f "$artifact_path" ]; then
+            artifact_hash=$(cat "$artifact_path")
+            log_output="$log_output Artifact Hash: $artifact_hash"$'\n'
+            log_output="$log_output General Hash: $GENERAL_HASH"$'\n'
+            
+            if [ "$artifact_hash" == "$GENERAL_HASH" ]; then
+              echo "NEED_TO_CREATE=false" >> $GITHUB_ENV
+              log_output="$log_output Hashes match: No need to create a new artifact."$'\n'
+            else
+              echo "NEED_TO_CREATE=true" >> $GITHUB_ENV
+              log_output="$log_output Hashes don't match: A new artifact will be created."$'\n'
+            fi
+          else
+            echo "NEED_TO_CREATE=true" >> $GITHUB_ENV
+            log_output="$log_output Artifact file not found: A new artifact will be created."$'\n'
+          fi
+        else
+          echo "NEED_TO_CREATE=true" >> $GITHUB_ENV
+          log_output="$log_output Artifact download failed: A new artifact will be created."$'\n'
+          log_output="$log_output $download_output"$'\n'
+        fi
+
+        if [ "${{ env.DEBUG_PIPE }}" = "true" ]; then
+          echo "-----------"$'\n'"Check for General Artifact"$'\n'"-----------"$'\n'"$log_output" >> ${{ env.LOG_FILE }}
+        fi
+
+        if [ "${{ env.DEBUG_PIPE }}" = "true" ]; then
+          echo "NEED_TO_CREATE=true" >> $GITHUB_ENV
+          log_output="$log_output Debug Mode on: A new artifact will be created."$'\n'
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    ####################
+    - name: 🏗️ Prepare General Artifact (If Necessary)
+      if: env.NEED_TO_CREATE == 'true'
+      run: |
+        (
+          LOG_FILE="${{ env.LOG_FILE }}"
+          DEBUG="${{ env.DEBUG_PIPE }}"
+
+          echo "-----------"$'\n'"Prepare General Artifact (If Necessary)"$'\n'"-----------" >> $LOG_FILE
+
+          rm -rf temp_general
+          mkdir -p temp_general
+
+          echo "Copiando archivos individuales..." >> $LOG_FILE
+
+          rsync -av --prune-empty-dirs --include="*.json" --include="*.ts" --include=".eslintrc.json" --include="bun.lockb" --include="yarn.lock" --exclude=".git/" --exclude="coverage/" --exclude="docs/" --exclude="node_modules/" --exclude="*" ./ temp_general/ >> $LOG_FILE 2>/dev/null
+
+          # Directorios completos
+          for dir in cypress/support extension cypress/Tests/e2e/extension cypress/Tests/utils; do
+            if [ -d "$dir" ]; then
+              mkdir -p "temp_general/$dir"
+
+              echo "🔹 Copiando contenido completo de $dir..." >> $LOG_FILE
+
+              rsync -av "$dir/" "temp_general/$dir/" >> $LOG_FILE 2>/dev/null
+            else
+              echo "⚠️ Directorio $dir no encontrado, omitiendo." >> $LOG_FILE
+            fi
+          done
+
+          # Directorios con solo archivos de nivel superior
+          declare -A single_level_dirs=(
+            ["cypress/Tests/pages"]="*.ts *.js"
+            ["cypress/fixtures/data"]='*.json'
+            ["cypress/fixtures/images"]='*'
+          )
+
+          for dir in "${!single_level_dirs[@]}"; do
+            if [ -d "$dir" ]; then
+              mkdir -p "temp_general/$dir"
+
+              echo "🔹 Copiando solo archivos de nivel superior de $dir..." >> $LOG_FILE
+
+              rsync -av --include="${single_level_dirs[$dir]}" --exclude="*/" "$dir/" "temp_general/$dir/" >> $LOG_FILE 2>/dev/null
+            else
+              echo "⚠️ Directorio $dir no encontrado, omitiendo." >> $LOG_FILE
+            fi
+          done
+
+          echo "$GENERAL_HASH" > temp_general/general-hash.txt
+          echo "Hash guardado en temp_general/general-hash.txt" >> $LOG_FILE
+        )
+
+    ####################
+    - name: 📤 Upload General Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cy-general-artifact
+        path: temp_general
+
+    ###################
+    - name: 📝 Upload Debug Log Artifact
+      if: env.DEBUG_PIPE == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-log-parallelRegression
+        path: ${{ env.LOG_FILE }}
+
+    ##################
+    - name: 📦 Upload .git Artifact
+      if: env.DEBUG_PIPE == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        include-hidden-files: true
+        name: git-artifact
+        path: .git/
+
+  #####################
+  #####################
+  #####################
+  Prepare_SUTs:
+    runs-on: ${{ inputs.system }}
+    strategy:
+      matrix:
+        SUT: ${{ fromJson(inputs.SUTS).suts }}
+    environment:
+      name: ${{ inputs.environment }}
+    env:
+      BASE_PATH: "${{ vars.TESTS_BASE_PATH }}"
+      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
+      DEBUG: "${{ vars.DEBUG_PIPE }}"
+
+    steps:
+    #####################
+    - name: 📦 Checkout Repository
+      uses: actions/checkout@v3
+
+    #####################
+    - name: 🏗️ Prepare SUT Artifacts for ${{ matrix.SUT }}
+      run: |
+        SUT=${{ matrix.SUT }}
+
+        TEMP_DIR="temp_${SUT}"
+        LOG_FILE="${{ env.LOG_FILE_PATH }}/log-${SUT}.log"
+
+        mkdir -p "$LOG_FILE_PATH"
+
+        echo "-----------"$'\n'"Prepare $SUT SUT Artifact"$'\n'"-----------" >> $LOG_FILE
+          
+        # Directorios donde se deben incluir subcarpetas
+        for path in "e2e" "api" "pages"; do
+          src_dir="$BASE_PATH/$path/$SUT/"
+          dest_dir="$TEMP_DIR/$BASE_PATH/$path/$SUT/"
+          
+          # Verificar si la carpeta existe antes de continuar
+          if [ -d "$src_dir" ]; then
+            mkdir -p "$dest_dir"
+          
+            # Verificar archivos en la carpeta
+            files_in_path=$(find "$src_dir" -type f -name "*.js" -o -name "*.ts" 2>/dev/null || true)
+            echo "Files in $path: $files_in_path" >> $LOG_FILE
+          
+            # Copiar todo el contenido incluyendo subdirectorios (si corresponde)
+            rsync -av --include='*/' --include='*.js' --include='*.ts' --exclude='*' "$src_dir" "$dest_dir" 2>/dev/null || true
+          fi
+        done
+          
+        # Directorios donde no se deben incluir subcarpetas (solo archivos)
+        declare -A no_subdirs_dirs=(
+          ["cypress/fixtures/data"]='*.json'
+          ["cypress/fixtures/images"]='*'
+        )
+          
+        for dir in "${!no_subdirs_dirs[@]}"; do
+          src_dir="$dir/$SUT/"
+          dest_dir="$TEMP_DIR/$dir/$SUT/"
+          
+          if [ -d "$src_dir" ]; then
+            mkdir -p "$dest_dir"
+          
+            # Verificar archivos en la carpeta de fixtures
+            files_in_fixtures=$(find "$src_dir" -type f -name "${no_subdirs_dirs[$dir]}" 2>/dev/null || true)
+            echo "Files in $dir/$SUT: $files_in_fixtures" >> $LOG_FILE
+          
+            # Copiar solo archivos de nivel superior (sin subcarpetas)
+            rsync -av --include="${no_subdirs_dirs[$dir]}" --exclude='*/' "$src_dir" "$dest_dir" 2>/dev/null || true
+          fi
+        done
+
+    #####################
+    - name: 📤 Upload SUT Artifact for ${{ matrix.SUT }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: "cy-${{ matrix.SUT }}-artifact"
+        path: "temp_${{ matrix.SUT }}/"
+
+    #####################
+    - name: 📜 Upload Log File for ${{ matrix.SUT }}
+      if: vars.DEBUG_PIPE == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: "log-${{ matrix.SUT }}"
+        path: "${{ env.LOG_FILE_PATH }}/log-${{ matrix.SUT }}.log"
+
+  #####################
+  #####################
+  #####################
+  Join_SUTs_Log:
+    runs-on: ubuntu-latest
+    needs: [ Prepare_SUTs, Prepare_Common_Files ]
+    env:
+      LOG_FILE: "${{ needs.Prepare_Common_Files.outputs.LOG_FILE }}"
+      LOG_FILE_PATH: "${{ vars.LOG_FILE_PATH }}"
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SUT_ARRAY: ''
+    steps:
+
+    ####################
+    - name: 📦 Download .git Artifact
+      if: vars.DEBUG_PIPE == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: git-artifact
+        path: .git/
+
+    ###################
+    - name: 📜 Check GitHub CLI authentication
+      continue-on-error: true
+      run: |
+        echo "Checking GitHub CLI authentication..."
+        gh auth status || gh auth login
+
+    ###################
+    - name: 📜 Download Log artifacts
+      if: vars.DEBUG_PIPE == 'true'
+      run: |
+        SUT_ARRAY=$(echo '${{ inputs.SUTs }}' | jq -r '.suts[]' | tr '\n' ' ')
+        echo "SUT_ARRAY=$SUT_ARRAY" >> $GITHUB_ENV
+
+        # Descargar los logs en paralelo
+        echo "Downloading $LOG_FILE..."
+        gh run download -n debug-log-parallelRegression -D "${{ env.LOG_FILE_PATH }}" &
+
+        IFS=' ' read -r -a SUT_LIST <<< "$SUT_ARRAY"
+        for SUT in "${SUT_LIST[@]}"; do
+        (
+          echo "Downloading logs for $SUT..."
+          gh run download -n log-$SUT -D "${{ env.LOG_FILE_PATH }}"
+        ) &
+        done
+
+        wait
+
+    ###################
+    - name: 🔗 Join SUT Logs in Regrassion Log
+      if: vars.DEBUG_PIPE == 'true'
+      run: |
+        LOG_FILE="${{ env.LOG_FILE }}"
+
+        for SUT in ${{ env.SUT_ARRAY }}; do
+          LOG_SUT="${{ env.LOG_FILE_PATH }}/log-$SUT.log"
+
+          if [[ -f "$LOG_SUT" ]]; then
+            echo "Joining Log file from: $LOG_SUT"
+            cat "$LOG_SUT" >> "$LOG_FILE"
+          else
+            echo "❌ Log file for $SUT not found: $LOG_SUT"
+          fi
+        done
+
+    ###################
+    - name: 📝 Upload Log Artifact
+      if: vars.DEBUG_PIPE == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-log-parallelRegression
+        path: ${{ env.LOG_FILE }}
+        overwrite: true
+
+  ###################
+  ###################
+  ###################
+  Regression:
+    runs-on: ${{ inputs.system }}
+    needs: [ Prepare_Common_Files, Prepare_SUTs, Join_SUTs_Log ]
+    strategy:
+      matrix:
+        SUT: ${{ fromJson(inputs.SUTS).suts }}
+    environment:
+      name: ${{ inputs.environment }}
+    env:
+      BASE_PATH: "${{ vars.TESTS_BASE_PATH }}"
+      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
+      TESTS_PATH: ${{ vars.TESTS_PATH }}
+      TESTS_RESULTS: ${{ vars.TESTS_RESULTS }}
+      DEBUG_PIPE: ${{ vars.DEBUG_PIPE }}
+      LOG_FILE: ${{ needs.Prepare_Common_Files.outputs.LOG_FILE }}
+      MOCHA_REPORT_DIR: ${{ vars.MOCHA_REPORT_DIR }}
+      ORANGE_USERNAME: ${{ secrets.ORANGE_USERNAME }}
+      ORANGE_PASSWORD: ${{ secrets.ORANGE_PASSWORD }}
+      TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
+      TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+      LITE_CART_DB_USER: ${{ secrets.LITE_CART_DB_USER }}
+      LITE_CART_DB_PASS: ${{ secrets.LITE_CART_DB_PASS }}
+      LITE_CART_CLIENT_USERNAME: ${{ secrets.LITE_CART_CLIENT_USERNAME }}
+      LITE_CART_CLIENT_PASS: ${{ secrets.LITE_CART_CLIENT_PASS }}
+    outputs:
+      result: ${{ steps.test_result.outputs.result }}
+
+    steps:
+    ###################
+    - name: 📦 Download General Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: cy-general-artifact
+        path: .
+
+    ###################
+    - name: 📦 Download ${{ matrix.SUT }} SUT Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: cy-${{ matrix.SUT }}-artifact
+        path: .
+
+    #####################
+    - name: 🗄️ Restore Cache bun dependencies
+      id: cache-bun
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.bun
+          node_modules
+          ~/.cache/Cypress
+        key: ${{ inputs.system }}-bun-${{ hashFiles('*.{json,ts,lockb,lock}') }}
+        restore-keys: |
+          ${{ inputs.system }}-bun-
+
+    #####################
+    - name: 💿 Install Node.js v20
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    #####################
+    - name: 🍙 Bun Setup
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    #####################
+    - name: 🧬 Install Project Dependencies
+      run: |
+        bun install
+
+    #####################
+    - name: 💫 Initialize Xvfb server
+      if: runner.os == 'Linux'
+      run: |
+        (
+          # Comprobar si Xvfb ya está corriendo
+          if ! pgrep -x "Xvfb" > /dev/null; then
+            echo "Xvfb is not running, starting it..."
+            Xvfb :99 -ac 2>/dev/null & #? Descartar warnings
+          else
+            echo "Xvfb is already running."
+          fi
+        ) &
+
+    #####################
+    - name: 🎨 Set DISPLAY environment variable
+      run: |
+        echo "DISPLAY=:99" >> $GITHUB_ENV &
+
+    #####################
+    - name: 🔎 Check Typescript Code
+      run: |
+        bun run check:ts &
+
+    ####################
+    - name: ⏳ Wait for background tasks to finish
+      run: |
+        wait
+
+    #####################
+    - name: 📲 Run UI tests for ${{ matrix.SUT }}
+      continue-on-error: true
+      run: |
+        test_dir="${{ env.TESTS_PATH }}/${{ matrix.SUT }}"
+
+        if [ ! -d "$test_dir" ]; then 
+          echo "Test directory $test_dir does not exist. Skipping execution."
+          exit 0
+        fi
+
+        mapfile -t test_files < <(find "$test_dir" -type f \( -name '*.cy.js' -o -name '*.cy.ts' \) ! -name '*.Api.cy.*' ! -name '*.e2e.cy.*' )
+        if [ "${{ env.DEBUG_PIPE }}" == "true" ]; then
+          echo "Found test files: ${test_files[@]}"
+        fi
+
+        if [ "${#test_files[@]}" -gt 0 ]; then
+          # Formatear la lista de archivos en una cadena separada por comas
+          spec_files=$(IFS=,; echo "${test_files[*]}")
+
+          # Ejecutar el comando con la lista de archivos
+          bun run regression:chrome:ci --spec "$spec_files"
+        else
+          echo "No UI tests found, skipping execution."
+        fi
+
+    #####################
+    - name: 🛰️ Run API and Integration Tests
+      continue-on-error: true
+      run: |
+        test_dir="${{ env.TESTS_PATH }}/${{ matrix.SUT }}"
+
+        if [ ! -d "$test_dir" ]; then
+          echo "Test directory $test_dir does not exist. Skipping execution."
+          exit 0
+        fi
+
+        mapfile -t test_files < <(find "$test_dir" -type f \( -name '*.Api.cy.js' -o -name '*.Api.cy.ts' \))
+        if [ "${{ env.DEBUG_PIPE }}" == "true" ]; then
+          echo "Found test files: ${test_files[@]}"
+        fi
+
+        if [ "${#test_files[@]}" -gt 0 ]; then
+          # Formatear la lista de archivos en una cadena separada por comas
+          spec_files=$(IFS=,; echo "${test_files[*]}")
+
+          # Ejecutar el comando con la lista de archivos
+          bun run regression:chrome:ci --spec "$spec_files"
+        else
+          echo "No API tests found, skipping execution."
+        fi
+
+    #####################
+    - name: 🌐 Run e2e Test
+      continue-on-error: true
+      run: |
+        test_dir="${{ env.TESTS_PATH }}/${{ matrix.SUT }}"
+
+        if [ ! -d "$test_dir" ]; then
+          echo "Test directory $test_dir does not exist. Skipping execution."
+          exit 0
+        fi
+
+        mapfile -t test_files < <(find "$test_dir" -type f \( -name '*.e2e.cy.js' -o -name '*.e2e.cy.ts' \))
+        if [ "${{ env.DEBUG_PIPE }}" == "true" ]; then
+          echo "Found test files: ${test_files[@]}"
+        fi
+
+        if [ "${#test_files[@]}" -gt 0 ]; then
+          # Formatear la lista de archivos en una cadena separada por comas
+          spec_files=$(IFS=,; echo "${test_files[*]}")
+
+          # Ejecutar el comando con la lista de archivos
+          bun run regression:chrome:ci --spec "$spec_files"
+        else
+          echo "No e2e tests found, skipping execution."
+        fi
+
+    ###################
+    - name: 💾 Save Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: regression-${{ matrix.SUT }}-results
+        path: ${{ env.TESTS_RESULTS }}
+        retention-days: 15
+
+    ##################
+    - name: 🛫 Export Test Result as Output
+      if: always()
+      id: test_result
+      run: echo "result=${{ job.status }}" >> $GITHUB_OUTPUT
+
+  ###################
+  ###################
+  ###################
+  Generate_Reports:
+    runs-on: ${{ inputs.system }}
+    needs: [ Prepare_Common_Files, Prepare_SUTs, Join_SUTs_Log, Regression ]
+    strategy:
+      max-parallel: 1
+      matrix:
+        SUT: ${{ fromJson(inputs.SUTS).suts }}
+    environment:
+      name: ${{ inputs.environment }}
+    env:
+      DEBUG_PIPE: ${{ vars.DEBUG_PIPE }}
+      LOG_FILE: ${{ needs.Prepare_Common_Files.outputs.LOG_FILE }}
+      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
+      TESTS_RESULTS: ${{ vars.TESTS_RESULTS }}
+      MOCHA_REPORT_DIR: ${{ vars.MOCHA_REPORT_DIR }}
+    steps:
+
+    #####################
+    - name: 📦 Download General Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: cy-general-artifact
+
+    ####################
+    - name: 🗄️ Restore Cache bun dependencies
+      id: cache-bun
+      uses: actions/cache/restore@v3
+      with:
+        path: |
+          ~/.bun
+          node_modules
+          ~/.cache/Cypress
+        key: ${{ inputs.system }}-bun-${{ hashFiles('*.{json,ts,lockb,lock}') }}
+        restore-keys: |
+          ${{ inputs.system }}-bun-
+
+    #####################
+    - name: 🍙 Bun Setup
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    #####################
+    - name: 🧬 Install Project Dependencies
+      run: |
+        bun install
+
+    ###################
+    - name: 💾 Restore ${{ matrix.SUT }}\'s Results
+      if: always()
+      uses: actions/download-artifact@v4
+      with:
+        name: regression-${{ matrix.SUT }}-results
+        path: ${{ env.TESTS_RESULTS }}
+
+    ####################
+    - name: 📜 Generate JUnit/Mocha Report
+      if: always()
+      run: bun run chrome:report
+
+    ###################
+    - name: 📊 Upload Artifact Mochawesome Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: regression-${{ matrix.SUT }}-mocha-report
+        path: ${{ env.MOCHA_REPORT_DIR }}
+        retention-days: 15
+
+    ##################
+    - name: 📜 Get Allure Report History
+      uses: actions/checkout@v4
+      if: always()
+      with:
+        ref: gh-pages #? the branch used for the GitHub Pages content.
+        path: gh-pages #? this is the directory where the previous allure reports were stored. #? In this case, the path gh-pages means the root of the repository.
+
+    #################
+    - name: 🛠️ Build Allure Report
+      uses: simple-elf/allure-report-action@master
+      if: always()
+      with:
+        gh_pages: gh-pages #? the directory of checkout branch (gh-pages) where the previous allure data will be copied.
+        #? this copied data will be combined with the actual allure-report data and generate the allure-history data.
+        subfolder: regression-${{ matrix.SUT }} #? the subfolder where the deployed data (allure-history) will be placed. 
+        #? If destination_dir is not specified, this subfolder will be saved to the root of the branch. 
+        #? Note: About the subfolder: Use this if you want to split the reports as different types (i.g smoke, regression, etc) 
+        allure_results: reports/allure-results #? path of the actual allure-results generated by the tests.
+        allure_report: allure-report #? path of the allure-report generated by the tests to be combined with the previous data.
+        allure_history: allure-history #? path of the allure-history to be generated by the action.
+        keep_reports: 15 #? the number of reports to keep in the allure-history.
+
+    #################
+    - name: 📈 Deploy Allure Report to GitHub Pages
+      if: always()
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_branch: gh-pages #? the branch used for the GitHub Pages content.
+        destination_dir: regression-${{ matrix.SUT }} #? this is the directory inside the gh-pages branch where the allure-history will be saved.
+        #? Note: If you use a destination_dir i.g 'staging' AND provide a subfolder i.g 'smoke' in the Build Allure Report step, the allure-history will be published on the 'staging/smoke' directory.
+        publish_dir: ${{ env.MOCHA_REPORT_DIR }} #? the directory to be published. Must be the same as the allure_history value from the Build Allure Report step
+        keep_files: true #? this is required to work properly with the subfolder option in the Build Allure Report step.
+
+  ###################
+  ###################
+  ###################
+  Ari_Slack_Notification:
+    runs-on: ubuntu-latest
+    needs: [ Prepare_Common_Files, Prepare_SUTs, Join_SUTs_Log, Regression ]
+    if: always()
+    strategy:
+      matrix:
+        SUT: ${{ fromJson(inputs.SUTS).suts }}
+    environment:
+      name: ${{ inputs.environment }}
+    env:
+      DEBUG_PIPE: ${{ vars.DEBUG_PIPE }}
+      LOG_FILE: ${{ needs.Prepare_Common_Files.outputs.LOG_FILE }}
+      LOG_FILE_PATH: ${{ vars.LOG_FILE_PATH }}
+    steps:
+
+    ##################
+    - name: 🔔 Slack Notification
+      uses: rtCamp/action-slack-notify@v2
+      if: always()
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        SLACK_USERNAME: Ari✨
+        SLACK_MESSAGE: '🧪(${{ github.repository }}): ${{ github.actor }} triggered Regression 🔁 for ${{ matrix.SUT }}'
+        SLACK_COLOR: ${{ needs.Regression.result }}
+        SLACK_ICON: ${{ secrets.ARI_PROFILE }}
