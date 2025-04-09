@@ -6,17 +6,18 @@ on:
   workflow_dispatch:
     # Permite ejecución manual
 
-env:
-  ALWAYSDATA_USER: ${{ secrets.ALWAYSDATA_USER }}
-  ALWAYSDATA_PASS: ${{ secrets.ALWAYSDATA_PASS }}
-
 jobs:
   keep-alive:
     runs-on: ubuntu-latest
+    environment:
+      name: QA
+    env:
+      ALWAYSDATA_USER: ${{ secrets.ALWAYSDATA_USER }}
+      ALWAYSDATA_PASS: ${{ secrets.ALWAYSDATA_PASS }}
 
     steps:
     - name: 📦 Checkout Repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: 💿 Install Node.js v20
       uses: actions/setup-node@v4
@@ -29,14 +30,6 @@ jobs:
           echo "Error: ALWAYSDATA_USER or ALWAYSDATA_PASS is not defined"
           exit 1
         fi
-
-    - name: Cache Bun modules
-      uses: actions/cache@v3
-      with:
-        path: ~/.bun
-        key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
-        restore-keys: |
-          ${{ runner.os }}-bun-
 
     - name: 🍙 Bun Setup
       uses: oven-sh/setup-bun@v2
@@ -54,7 +47,9 @@ jobs:
         fi
 
     - name: Run Alwaysdata Cron Job
-      shell: bash
-      run: |
-        echo "ALWAYSDATA_USER=$ALWAYSDATA_USER"
-        bun run cypress run --browser chrome --config-file=cypress.config.cron.ts --spec=cypress/Tests/utils/AlwaysData-cron.cy.ts
+      uses: cypress-io/github-action@v4
+      with:
+        browser: chrome
+        command: |
+          echo "ALWAYSDATA_USER=$ALWAYSDATA_USER"
+          bun run cypress run --config-file=cypress.config.cron.ts --spec=cypress/Tests/utils/AlwaysData-cron.cy.ts
