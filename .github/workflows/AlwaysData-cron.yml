@@ -25,10 +25,15 @@ jobs:
 
     - name: Check Necesary Secrets
       run: |
+        echo "ALWAYSDATA_USER=$ALWAYSDATA_USER"
+        echo "ALWAYSDATA_PASS=$ALWAYSDATA_PASS"
         if [ -z "$ALWAYSDATA_USER" ] || [ -z "$ALWAYSDATA_PASS" ]; then
           echo "Error: ALWAYSDATA_USER or ALWAYSDATA_PASS is not defined"
           exit 1
         fi
+
+    - name: List files in the working directory
+      run: ls -l
 
     - name: Cache Bun modules
       uses: actions/cache@v3
@@ -46,8 +51,19 @@ jobs:
     - name: Install dependencies
       run: bun install
 
+    - name: List files in cypress/Tests/utils
+      run: ls -l cypress/Tests/utils/
+
+    - name: Check Bun version
+      run: bun --version
+
+    - name: Install Chromium for Cypress
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y chromium-browser
+
     - name: Run Alwaysdata Cron Job
       shell: bash
       run: |
         echo "ALWAYSDATA_USER=$ALWAYSDATA_USER"
-        bun run cypress run --browser chrome --config-file=cypress.config.cron.ts --spec=cypress/Tests/utils/AlwaysData-cron.cy.ts
+        bun run cypress run --browser chrome --headless --config-file=cypress.config.cron.ts --spec=cypress/Tests/utils/AlwaysData-cron.cy.ts
