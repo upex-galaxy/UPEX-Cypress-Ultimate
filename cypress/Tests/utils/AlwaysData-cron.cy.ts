@@ -6,7 +6,7 @@ describe('AlwaysData Cron Job', () => {
 		throw new Error('Missing environment variables for login.');
 	}
 
-	it('should perform login and logout', () => {
+	beforeEach(() => {
 		cy.session('alwaysdata-session', () => {
 			cy.visit('https://admin.alwaysdata.com/login/');
 			cy.get('#id_login').type(ALWAYSDATA_USER);
@@ -14,7 +14,10 @@ describe('AlwaysData Cron Job', () => {
 			cy.get('.btn[type=submit]').click();
 			cy.url().should('not.include', 'login');
 		});
+	});
 
+	it('should perform login and logout', () => {
+		cy.visit('https://admin.alwaysdata.com/');
 		cy.get('.user-login').click();
 		cy.get('li.dropdown-logout:nth-child(7)').should('be.visible').click();
 		cy.url().should('include', 'login');
