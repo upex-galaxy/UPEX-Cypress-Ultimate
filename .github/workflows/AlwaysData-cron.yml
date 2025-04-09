@@ -23,7 +23,7 @@ jobs:
       with:
         node-version: 20
 
-    - name: Check Necesary Secrets
+    - name: Check Necessary Secrets
       run: |
         if [ -z "$ALWAYSDATA_USER" ] || [ -z "$ALWAYSDATA_PASS" ]; then
           echo "Error: ALWAYSDATA_USER or ALWAYSDATA_PASS is not defined"
@@ -46,13 +46,9 @@ jobs:
     - name: Install dependencies
       run: bun install
 
-    - name: Verify Cypress configuration and dependencies
+    - name: Check if Cypress is installed
       run: |
-        if ! test -f "cypress.config.cron.ts"; then
-          echo "Error: Cypress configuration file missing."
-          exit 1
-        fi
-        if ! bun list cypress; then
+        if ! bun show cypress; then
           echo "Error: Cypress is not installed."
           exit 1
         fi
