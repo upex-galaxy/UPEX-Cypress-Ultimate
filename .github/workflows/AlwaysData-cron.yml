@@ -51,5 +51,4 @@ jobs:
       with:
         browser: chrome
         command: |
-          echo "ALWAYSDATA_USER=$ALWAYSDATA_USER"
           bun run cypress run --config-file=cypress.config.cron.ts --spec=cypress/Tests/utils/AlwaysData-cron.cy.ts
